@@ -1,0 +1,157 @@
+---
+title: "Webscrapping Database"
+author: "Brian Papiernik"
+date: "2023-10-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(httr)
+library(rvest)
+library(tidyverse)
+library(jsonlite)
+library(lubridate)
+library(psych)
+library(GPArotation)
+library(dplyr)
+library(rvest)
+library(stringr)
+```
+
+
+```{r}
+aaml_url <- url("https://aaml.org/find-a-lawyer/page/")
+aaml_page <- read_html(aaml_url)
+```
+
+```{r}
+aaml_name <- aaml_page %>%
+  html_elements("h2.lawyer-name") %>%
+  html_text2()
+aaml_name
+```
+
+
+```{r}
+
+# Define the base URL
+aaml_base_url <- "https://aaml.org/find-a-lawyer/page/"
+
+# Number of pages to scrape
+num_pages <- 88
+
+# Create an empty dataframe to store the scraped data
+result_df <- data.frame()
+
+# Iterate through the pages using a for loop
+for (page_number in 1:num_pages) {
+  Sys.sleep(1)  
+  
+  # Construct the URL for the current page
+  aaml_url <- paste0(aaml_base_url, page_number)
+  
+  # Read the HTML content of the webpage
+  webpage <- read_html(aaml_url)
+  
+  # Extract lawyer names from the HTML structure
+  aaml_name <- webpage %>%
+    html_nodes("h2.lawyer-name") %>%
+    html_text()
+  
+   # Extract lawyer profile links and convert to absolute URLs
+  aaml_links <- webpage %>%
+    html_nodes("div.lawyer") %>%
+    html_element("a") %>%
+    html_attr("href") %>%
+    url_absolute("https://aaml.org/")
+  
+
+  
+  # Create a temporary dataframe for the current page's data
+  page_df <- data.frame(Name = aaml_name, Website = aaml_links)
+  
+  # Append the data to the result dataframe
+  result_df <- bind_rows(result_df, page_df)
+}
+
+# View the result dataframe
+print(result_df)
+```
+
+
+```{r}
+# Loop through the collected profile links to extract detailed information
+for(i in 1:length(result_df$Website)){
+  Sys.sleep(1)
+  
+  # Access the individual lawyer's profile page
+  dedicated_url <- result_df$Website[i]
+  
+  
+  dedicated_page <- read_html(dedicated_url)
+  
+  
+  # Extract the name of the law firm (if available)
+  law_firm <- dedicated_page %>%
+      html_elements("div.uael-sub-heading.elementor-inline-editing") %>%
+      html_text()
+  
+   # Handle cases where the law firm information is missing  
+  if (length(law_firm) == 0) {
+      result_df$LawFirm[i] <- NA
+  } else {
+      result_df$LawFirm[i] <- law_firm
+  }
+  
+  # Extract the telephone number from the profile page
+  telephone_number <- dedicated_page %>%
+    html_nodes("a[href^='tel:']") %>%
+    html_attr("href") %>%
+    gsub("tel:", "", .)
+  
+   # Handle cases where the telephone number is missing  
+  if (length(telephone_number) == 0) {
+      result_df$Telephone[i] <- NA
+  } else {
+      result_df$Telephone[i] <- telephone_number
+  }
+
+  # Extract the email address from the profile page
+  email_address <- dedicated_page %>%
+    html_node("a[href^='mailto:']") %>%
+    html_attr("href") %>%
+    gsub("mailto:", "", .)
+  
+  
+  # Handle cases where the email address is missing
+  if (length(email_address) == 0) {
+      result_df$Email[i] <- NA
+  } else {
+      result_df$Email[i] <- email_address
+  }
+  # check to see if the webscrapping is working for each page
+  print(paste("page",i, "completed"))
+}
+
+
+```
+  
+
+  
+
+```{r}
+result_df2 <- result_df %>%
+  mutate(
+    FirstName = str_extract(Name, "^[^ ]+"),  # Extract first name before the first space
+    LastName = str_extract(Name, "(?<= )[A-Za-z'-]+")  # Extract last name after the first space
+  )
+
+write.csv(result_df2, file = "AAML.csv")
+```
+
+
